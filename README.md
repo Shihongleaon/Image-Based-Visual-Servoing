@@ -66,7 +66,16 @@ C++ 移植可消除 (瓶颈是四次方程求根与 SVD)。
 | 全程检测失败 | 0 / 250 步 |
 | σ_min 最小值 | 0.088 (未进入奇异区, 阻尼全程自适应) |
 
-曲线: `src/fig_arm.png`  视频: `src/arm_servo_demo.mp4`
+曲线: `src/fig_arm.png`  视频: `src/arm_servo_demo.mp4` (相机视角)
+
+**第三视角演示** (`--video`): 左侧为固定外部相机俯视工作区, 右侧为 eye-in-hand 相机画面,
+顶部叠加逐步真值误差 —— 用于展示机械臂与相机在空间中的实际运动。
+
+```
+python main_arm.py --steps 250 --res 480 --video arm_world_demo.mp4 --out out_demo
+```
+
+成片: `src/arm_world_demo.mp4` (960×300, 30 fps, 8.3 s)
 
 ## 自研 P3P 求解器 (`src/p3p.py`)
 

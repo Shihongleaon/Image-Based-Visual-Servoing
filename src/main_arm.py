@@ -131,6 +131,29 @@ def initial_joints(model, dls, distance, seed=0):
     return q, info
 
 
+# ---- 第三视角渲染 (演示用) -------------------------------------------------
+
+def render_world(width, height):
+    """固定外部相机俯视工作区, 用于展示机械臂与相机的空间运动。
+
+    半分辨率渲染再放大: 第三视角只用于看运动趋势, 不参与任何算法,
+    没必要按相机分辨率出图 (软光栅代价与像素数成正比)。
+    """
+    w, h = max(240, width // 2), max(150, height // 2)
+    target = [-0.04, 0.22, 0.30]
+    view = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=target, distance=1.12,
+        yaw=58.0, pitch=-32.0, roll=0.0, upAxisIndex=2)
+    proj = p.computeProjectionMatrixFOV(fov=52.0, aspect=w / h,
+                                        nearVal=0.05, farVal=3.0)
+    _, _, rgb, _, _ = p.getCameraImage(
+        w, h, view, proj, renderer=p.ER_TINY_RENDERER, shadow=0,
+        lightDirection=[-0.5, -0.6, -0.6],
+        lightAmbientCoeff=0.6, lightDiffuseCoeff=0.5, lightSpecularCoeff=0.0)
+    img = np.reshape(rgb, (h, w, 4))[:, :, :3].astype(np.uint8)
+    return img
+
+
 # ---- 主循环 ---------------------------------------------------------------
 
 def main():
@@ -143,12 +166,40 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.3)
     ap.add_argument("--lam", type=float, default=2.8)
     ap.add_argument("--gui", action="store_true")
+    ap.add_argument("--video", type=str, default="",
+                    help="第三视角分屏演示视频输出路径 (mp4), 空则不录")
     ap.add_argument("--out", type=str, default="out_arm")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     W, H = args.res, int(args.res * 0.625)
     K = intrinsic_from_fov(W, H, args.fov)
+
+    import cv2
+    writer = None
+    if args.video:
+        writer = cv2.VideoWriter(args.video, cv2.VideoWriter_fourcc(*"mp4v"),
+                                 30.0, (2 * W, H))
+        if not writer.isOpened():
+            raise RuntimeError(f"无法创建视频: {args.video}")
+
+    def emit(world_img, cam_img, idx, et=None, er=None):
+        """左: 第三视角; 右: 手上相机; 顶部叠加实时真值误差。"""
+        if writer is None:
+            return
+        left = cv2.cvtColor(world_img, cv2.COLOR_RGB2BGR)
+        right = cv2.cvtColor(cam_img, cv2.COLOR_RGB2BGR)
+        left = cv2.resize(left, (right.shape[1], right.shape[0]))
+        canvas = np.hstack([left, right])
+        cv2.rectangle(canvas, (0, 0), (canvas.shape[1], 30), (0, 0, 0), -1)
+        txt = f"step {idx:03d}"
+        if et is not None:
+            txt += f"   e_t {et:6.2f} mm   e_R {er:5.2f} deg"
+        cv2.putText(canvas, txt, (10, 21), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.line(canvas, (right.shape[1], 0), (right.shape[1], canvas.shape[0]),
+                 (255, 255, 255), 1)
+        writer.write(canvas)
 
     sc, arm, model, dls = setup(gui=args.gui)
     ctrl = PBVSController(args.dist, lambda_p=args.lam, lambda_o=args.lam,
@@ -167,6 +218,7 @@ def main():
     save_steps = {0, 2, 5, 10, 20, 40, 80, 120, 200}
 
     for i in range(args.steps):
+        world_img = render_world(W, H) if writer is not None else None
         t_start = time.perf_counter()
 
         # 1) 真实相机位姿 (由仿真状态读出)
@@ -178,6 +230,7 @@ def main():
         uv = detect_corners(rgb)
         if uv is None:
             rows.append(dict(step=i, detect=0, e_t_mm=np.nan, e_R_deg=np.nan))
+            emit(world_img, rgb, i)
             continue
 
         # 3) P3P -> marker->camera
@@ -187,6 +240,7 @@ def main():
         p3p_ms = (time.perf_counter() - t_p3p0) * 1e3
         if not out["success"]:
             rows.append(dict(step=i, detect=1, e_t_mm=np.nan, e_R_deg=np.nan))
+            emit(world_img, rgb, i)
             continue
         # P3P 解的是 world->camera, 控制律需要 marker->camera
         R_mc, t_mc = S.world_pose_to_marker(out["R"], out["t"])
@@ -224,6 +278,7 @@ def main():
         R_prev, t_prev = R_wc.copy(), t_wc.copy()
 
         loop_ms = (time.perf_counter() - t_start) * 1e3
+        emit(world_img, rgb, i, e_t_gt, e_R_gt)
         rows.append(dict(
             step=i, detect=1,
             e_t_mm=e_t_gt, e_R_deg=e_R_gt,
@@ -257,6 +312,9 @@ def main():
                       f"判据 <5 mm / <0.8 deg 连续 12 步) ***")
 
     # ---- 汇总 ----
+    if writer is not None:
+        writer.release()
+        print(f"演示视频已保存: {args.video}")
     valid = [r for r in rows if r.get("detect") and np.isfinite(r.get("e_t_mm", np.nan))]
     err_t = np.array([r["e_t_mm"] for r in valid])
     err_r = np.array([r["e_R_deg"] for r in valid])

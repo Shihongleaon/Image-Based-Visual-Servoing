@@ -49,10 +49,14 @@ def plot_pbvs(d, path):
                        alpha=0.75, label="P3P 估计偏差 (估计 vs 真值)")
     ax[0].axhline(5.0, ls="--", lw=1, color="gray")
     ax[0].set_xlabel("时间 (s)")
-    ax[0].set_ylabel("平移误差 (mm)")
+    ax[0].set_ylabel("平移误差 (mm，对数刻度)")
     ax[0].set_title("PBVS 平移误差收敛")
     ax[0].grid(alpha=0.3, which="both")
     ax[0].legend(fontsize=8)
+    ax[0].annotate("灰线 = 估计偏差 1–3 mm\n它构成红线（控制误差）的地板",
+                   xy=(0.02, 0.05), xycoords="axes fraction",
+                   fontsize=7.2, color="#5F5E5A",
+                   bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.5))
 
     ax[1].semilogy(t[m], d["e_R_deg"][m], lw=1.4, color="#c0392b", label="控制误差 (由估计位姿计算)")
     if "gt_R_deg" in d:
@@ -61,7 +65,7 @@ def plot_pbvs(d, path):
                        alpha=0.75, label="P3P 估计偏差 (估计 vs 真值)")
     ax[1].axhline(0.8, ls="--", lw=1, color="gray")
     ax[1].set_xlabel("时间 (s)")
-    ax[1].set_ylabel("旋转误差 (deg)")
+    ax[1].set_ylabel("旋转误差 (°，对数刻度)")
     ax[1].set_title("PBVS 旋转误差收敛")
     ax[1].grid(alpha=0.3, which="both")
     ax[1].legend(fontsize=8)
@@ -78,14 +82,14 @@ def plot_arm(d, path, summary=None):
 
     ax[0].semilogy(t[m], d["e_t_mm"][m], lw=1.4, color="#c0392b", label="真实平移误差")
     ax[0].axhline(5.0, ls="--", lw=1, color="gray")
-    ax[0].set_ylabel("平移误差 (mm)")
+    ax[0].set_ylabel("平移误差 (mm，对数刻度)")
     ax[0].grid(alpha=0.3, which="both")
     ax[0].legend(fontsize=8, loc="upper right")
     ax[0].set_title("xArm6 + DLS-IK 视觉伺服闭环 (eye-in-hand)")
 
     ax[1].semilogy(t[m], d["e_R_deg"][m], lw=1.4, color="#8e44ad", label="真实旋转误差")
     ax[1].axhline(0.8, ls="--", lw=1, color="gray")
-    ax[1].set_ylabel("旋转误差 (deg)")
+    ax[1].set_ylabel("旋转误差 (°，对数刻度)")
     ax[1].grid(alpha=0.3, which="both")
     ax[1].legend(fontsize=8, loc="upper right")
 
