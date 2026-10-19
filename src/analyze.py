@@ -42,11 +42,11 @@ def plot_pbvs(d, path):
     m = np.isfinite(d["e_t_mm"]) & (d["detect"] > 0.5)
     fig, ax = plt.subplots(1, 2, figsize=(11, 3.8))
 
-    ax[0].semilogy(t[m], d["e_t_mm"][m], lw=1.4, color="#c0392b", label="P3P 估计误差")
+    ax[0].semilogy(t[m], d["e_t_mm"][m], lw=1.4, color="#c0392b", label="控制误差 (由估计位姿计算)")
     if "gt_t_mm" in d:
         g = np.isfinite(d["gt_t_mm"]) & (d["detect"] > 0.5)
         ax[0].semilogy(t[g], d["gt_t_mm"][g], lw=1.4, color="#2c3e50",
-                       alpha=0.75, label="真实位姿误差")
+                       alpha=0.75, label="P3P 估计偏差 (估计 vs 真值)")
     ax[0].axhline(5.0, ls="--", lw=1, color="gray")
     ax[0].set_xlabel("时间 (s)")
     ax[0].set_ylabel("平移误差 (mm)")
@@ -54,10 +54,11 @@ def plot_pbvs(d, path):
     ax[0].grid(alpha=0.3, which="both")
     ax[0].legend(fontsize=8)
 
-    ax[1].semilogy(t[m], d["e_R_deg"][m], lw=1.4, color="#c0392b", label="P3P 估计误差")
+    ax[1].semilogy(t[m], d["e_R_deg"][m], lw=1.4, color="#c0392b", label="控制误差 (由估计位姿计算)")
     if "gt_R_deg" in d:
+        g = np.isfinite(d["gt_R_deg"]) & (d["detect"] > 0.5)
         ax[1].semilogy(t[g], d["gt_R_deg"][g], lw=1.4, color="#2c3e50",
-                       alpha=0.75, label="真实位姿误差")
+                       alpha=0.75, label="P3P 估计偏差 (估计 vs 真值)")
     ax[1].axhline(0.8, ls="--", lw=1, color="gray")
     ax[1].set_xlabel("时间 (s)")
     ax[1].set_ylabel("旋转误差 (deg)")
