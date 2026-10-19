@@ -1,5 +1,13 @@
 # IBVS → PBVS: 自研 P3P + 六轴机械臂视觉伺服
 
+> **来源与致谢**：本仓库的单目 IBVS 仿真基线来自 Varun Edachali 的 MIT 开源项目
+> `Image-Based-Visual-Servoing`（原始 LICENSE 保留，见 `LICENSE`）。
+> 在此之上新增：自研 P3P 闭式求解器、PBVS 控制律、解析 FK + DLS 逆运动学、
+> xArm6 eye-in-hand 闭环、蒙特卡洛基准与全部实验分析。
+>
+> 环境：Python 3.10（`conda env ibvs310`）；机械臂模型用 `pybullet_data` 自带的
+> `xarm/xarm6_robot.urdf`，无需额外下载资产。
+
 基于 PyBullet 的视觉伺服仿真, 三个递进阶段:
 
 1. **IBVS** (原始基线): 图像雅可比把像素误差映射为相机速度, 深度来自 depth buffer 查表
