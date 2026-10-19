@@ -1,82 +1,67 @@
 """
-responsible for determining robot velocity required based on current image
+Motion control utilities for IBVS.
 """
 
 import numpy as np
-from cv2 import imread
-from typing import List
-
-from servo import get_marker_corners
-
-LAMBDA = 0.5
-required_pos = None
+from image import get_image_config
 
 
-def getRequiredPos() -> List[List[float]]:
+def get_error_vec(points: list) -> np.ndarray:
     """
-    lazily loads the required positions of the corners in the aruco marker
+    returns the error vector (difference between current and desired feature positions)
     """
-    global required_pos
-
-    if required_pos is None:
-        frame = imread("static/target.png")
-        required_pos = get_marker_corners(frame)
-        print(f"required features: {required_pos}")
-        assert required_pos is not None, "no Aruco marker found in the goal image"
-    return required_pos
-
-
-def jacobian(X: float, Y: float, Z: float = 1.0) -> List[List[float]]:
-    """
-    returns the jacobian for the given point and depth
-    """
-    x = X / Z
-    y = Y / Z
-    return [
-        [-1 / Z, 0, x / Z, x * y, -(1 + x**2), y],
-        [0, -1 / Z, y / Z, (1 + y**2), -x * y, -x],
-    ]
-
-
-def get_velocity(
-    points: List[List[float]], depth_buffer: List[List[float]]
-) -> np.ndarray:
-    """
-    gets the velocity vector given the points and the depth buffer
-    NOTE: we have 8 features and only 6 dof. In this case we naively take the first three points.
-    """
-
-    error = get_error_vec(points)
-
-    J = np.vstack(
-        [
-            jacobian(
-                X=int(points[i][0]),
-                Y=int(points[i][1]),
-                Z=(depth_buffer[int(points[i][1])][int(points[i][0])]),
-            )
-            for i in range(3)
-        ]
-    )
-    J_pinv = np.linalg.pinv(J)
-
-    vel = -LAMBDA * np.matmul(J_pinv, error)
-    return vel
-
-
-def get_error_vec(points: List[List[float]]) -> np.ndarray:
-    """
-    returns an error vector given the observed corner features
-    """
-
-    reqPos = getRequiredPos()
-    error = np.array([points[i][j] - reqPos[i][j] for i in range(3) for j in range(2)])
+    # desired features (target corners of aruco marker)
+    # These are the target pixel coordinates (from target image)
+    # You may need to tune these based on your target image
+    desired = np.array([
+        [380, 228],
+        [380, 270],
+        [421, 228],
+        [421, 270]
+    ], dtype=np.float32)
+    # current features (only first 3 corners used for 6 DOF)
+    current = np.array(points[:3], dtype=np.float32)
+    # error = current - desired (using only x,y of first 3 corners)
+    error = current.flatten() - desired[:3].flatten()
     return error
 
 
 def get_error_mag(error: np.ndarray) -> float:
     """
-    returns the magnitude of error for the given error vector
+    returns the mean squared error magnitude
     """
-    MSE = np.mean(error**2)
-    return float(MSE)
+    return float(np.mean(error ** 2))
+
+
+def get_velocity(points: list, depth_buffer: list, width: int = 800, height: int = 500) -> np.ndarray:
+    """
+    computes the velocity from the current feature points and depth buffer
+    """
+    LAMBDA = 0.5
+    # Stack Jacobian for first 3 points (6 DOF)
+    J = []
+    for i in range(3):
+        x, y = points[i]
+        x = int(round(x))
+        y = int(round(y))
+        # Clamp to image bounds
+        x = max(0, min(x, width-1))
+        y = max(0, min(y, height-1))
+        # Get depth at this pixel (depth_buffer is flat list)
+        idx = y * width + x
+        Z = depth_buffer[idx]
+        if Z == 0:
+            Z = 1.0  # avoid division by zero
+        # Image Jacobian for point (x,y) with depth Z
+        J.append([
+            -1/Z, 0, x/Z, x*y, -(1+x*x), y
+        ])
+        J.append([
+            0, -1/Z, y/Z, (1+y*y), -x*y, -x
+        ])
+    J = np.array(J)
+    # Compute pseudo-inverse
+    J_pinv = np.linalg.pinv(J)
+    error = get_error_vec(points)
+    vel = -LAMBDA * np.matmul(J_pinv, error)
+    return vel

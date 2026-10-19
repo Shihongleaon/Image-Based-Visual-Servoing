@@ -2,3 +2,11 @@ src/img
 src/__tmp
 src/__pycache__
 src/miniconda3
+
+# 系统 / 本地
+.DS_Store
+.workbuddy/
+
+# 临时与草稿
+src/examtest.py
+src/log.txt

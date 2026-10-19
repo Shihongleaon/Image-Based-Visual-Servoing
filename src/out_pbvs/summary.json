@@ -1,0 +1,17 @@
+{
+  "config": {
+    "dist_m": 0.6,
+    "fov_deg": 55.0,
+    "resolution": "480x300",
+    "ctrl_hz_nominal": 30.0
+  },
+  "converged": true,
+  "conv_step": 134,
+  "conv_time_s": 4.466666666666667,
+  "steady_t_mm": 3.3552892028403143,
+  "steady_R_deg": 0.3064622943844466,
+  "p95_t_mm": 6.098807967843954,
+  "ctrl_hz_measured": 9.178849532476606,
+  "p3p_ms_median": 4.77561799925752,
+  "steps": 200
+}

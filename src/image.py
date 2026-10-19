@@ -1,102 +1,58 @@
 """
-general facade for PIL, all major local image stores and edits are done here
+Image processing utilities for the IBVS project.
 """
 
-import os
-import glob
-from typing import List, Tuple, Dict, Union
-
-from PIL import Image, ImageDraw
 import numpy as np
+from PIL import Image
 
 
-def get_image_config() -> Dict[str, Union[int, float]]:
+def get_image_config() -> dict:
     """
     returns the image configuration
     """
-
-    WIDTH = 800
-    HEIGHT = 500
-    FOV = 90
-    NEAR_VAL = 0.01
-    FAR_VAL = 100
-
     return {
-        "width": WIDTH,
-        "height": HEIGHT,
-        "fov": FOV,
-        "near_val": NEAR_VAL,
-        "far_val": FAR_VAL,
-        "aspect": WIDTH / HEIGHT,
+        "width": 800,
+        "height": 500,
+        "fov": 90,
+        "aspect": 1.6,
+        "near_val": 0.01,
+        "far_val": 10,
     }
 
 
-def convert_img_to_arr(arr: List, h: int, w: int) -> np.ndarray:
+def convert_img_to_arr(rgb_img, depth_img, seg_img, width, height):
     """
-    converts the robot image into a numpy array
+    Convert PyBullet's RGB pixels (flat list) into an RGBA numpy array.
+    Handles both RGB (3-channel) and RGBA (4-channel) input.
     """
-    pixels = []
-    for x in range(h):
-        for y in range(w):
-            r, g, b, a = arr[x][y]
-            pixels.append((r, g, b, a))
+    arr = np.array(rgb_img, dtype=np.uint8)
+    total_pixels = width * height
 
-    img = Image.new("RGBA", (w, h))
-    img.putdata(pixels)
-    return np.array(img)
+    # Determine number of channels
+    if arr.size == total_pixels * 3:
+        # RGB -> reshape and add alpha channel (fully opaque)
+        arr = arr.reshape(height, width, 3)
+        rgba = np.zeros((height, width, 4), dtype=np.uint8)
+        rgba[:, :, :3] = arr
+        rgba[:, :, 3] = 255
+        return rgba
+    elif arr.size == total_pixels * 4:
+        # RGBA -> reshape directly
+        arr = arr.reshape(height, width, 4)
+        return arr
+    else:
+        raise ValueError(
+            f"Unexpected array size: {arr.size}, expected {total_pixels*3} or {total_pixels*4}"
+        )
 
 
-def write_text_to_image(
-    img_path: str, text: str, xy: Tuple[int, int], color: str
-) -> None:
+def save_image(error_mag, i, img_arr, min_error):
     """
-    writes any given text to an image
+    Saves the image with the error magnitude and iteration number.
     """
-    img = Image.open(img_path)
-
-    draw = ImageDraw.Draw(img)
-    draw.text(xy, text, fill=color)
-
-    img.save(img_path)
-
-
-def save_rgb_image(img_arr: np.ndarray, img_path: str) -> None:
-    """
-    saves an rgb image to a given path
-    """
-    img = Image.fromarray(img_arr)
-    img.save(img_path)
-
-
-def save_with_error(
-    img_arr: np.ndarray, img_path: str, error: str, color: str = "black"
-) -> None:
-    """
-    saves the image with the error text
-    """
-    save_rgb_image(img_arr, img_path)
-    write_text_to_image(img_path, f"error: {error}", (10, 10), color)
-
-
-def save_image(
-    error_mag: float | None, i: int, img_arr: np.ndarray, min_error: float
-) -> None:
-    """
-    saves the image with the error magnitude on it
-    """
-    # create the img directory if it does not exist
-    if not os.path.exists("img"):
-        os.makedirs("img")
-
-    if i == 0:
-        # clear leftover frames from previous runs
-        for f in glob.glob("img/rgbimage_*.png"):
-            os.remove(f)
-
-    error_str = f"{error_mag:.2f}" if error_mag else "undefined"
-    save_with_error(
-        img_arr,
-        f"./img/rgbimage_{i}.png",
-        error_str,
-        "green" if (error_mag and error_mag <= min_error) else "red",
-    )
+    if error_mag is None:
+        filename = f"img/no_marker_step_{i:03d}.png"
+    else:
+        filename = f"img/step_{i:03d}_err_{error_mag:.4f}.png"
+    img = Image.fromarray(img_arr, "RGBA")
+    img.save(filename)

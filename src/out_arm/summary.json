@@ -1,0 +1,19 @@
+{
+  "converged": true,
+  "conv_step": 80,
+  "conv_time_s": 2.6666666666666665,
+  "steady_t_mm": 1.0379428566381477,
+  "steady_R_deg": 0.43771298156758764,
+  "final_t_mm": 1.1042308675485983,
+  "final_R_deg": 0.43127872120747646,
+  "detect_fail": 0,
+  "p3p_ms_median": 6.830867496319115,
+  "ik_ms_median": 3.0129204969853163,
+  "loop_ms_median": 78.46347099984996,
+  "ctrl_hz": 12.744784130208977,
+  "ik_err_p_mm_median": 0.0002050116858449661,
+  "ik_err_p_mm_max": 0.009411322512763097,
+  "sigma_min_min": 0.08761986428756473,
+  "singular_steps": 0,
+  "steps": 250
+}

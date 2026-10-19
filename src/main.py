@@ -109,13 +109,13 @@ def get_projection_matrix() -> np.ndarray:
 
 def capture_camera_image(
     robot_pos: List[float], robot_rotation_matrix: np.ndarray
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     captures the image from the camera on the basis of the robot position and rotation matrix
+    returns: (rgb_pixels, depth_pixels, seg_pixels)
     """
     image_conf = get_image_config()
 
-    # robot rotation matrix
     # initial camera vectors
     init_camera_vector = (0, 1, 0)  # y axis
     init_up_vector = (0, 0, 1)  # z axis
@@ -131,13 +131,13 @@ def capture_camera_image(
     projection_matrix = get_projection_matrix()
 
     # capturing the image
-    img_details = p.getCameraImage(
+    _, _, rgb_pixels, depth_pixels, seg_pixels = p.getCameraImage(
         image_conf["width"],
         image_conf["height"],
         view_matrix,
         projection_matrix,
     )
-    return img_details
+    return rgb_pixels, depth_pixels, seg_pixels
 
 
 def update_pos_and_orn(
@@ -166,7 +166,7 @@ MIN_ERROR = float("inf")
 ERROR_GROWTH_LIMIT = 0.05  # 5%
 
 
-def update_error(error_mag: float, i: int | None = None) -> None:
+def update_error(error_mag: float, i: int = None) -> None:
     """
     updates the global min error and determines when to break
     """
@@ -197,6 +197,8 @@ def main() -> None:
     """
     _ = init_pybullet()
     img_conf = get_image_config()
+    width = img_conf["width"]
+    height = img_conf["height"]
     dt: float = 0.0001
 
     # initialise the robot position and orientation (arbitrary)
@@ -210,10 +212,16 @@ def main() -> None:
         p.stepSimulation()
         robot_rot_matrix = get_robot_rotation_matrix(robot_orientation)
 
-        img = capture_camera_image(robot_pos, robot_rot_matrix)
+        rgb_pixels, depth_pixels, seg_pixels = capture_camera_image(
+            robot_pos, robot_rot_matrix
+        )
 
         rgb_img_arr = convert_img_to_arr(
-            img[2], int(img_conf["height"]), int(img_conf["width"])
+            rgb_pixels,
+            depth_pixels,
+            seg_pixels,
+            width,
+            height
         )
 
         servo_points = get_marker_corners(rgb_img_arr)
@@ -232,14 +240,34 @@ def main() -> None:
         update_error(error, i=i)
 
         # get the velocity and update position and orientation
-        velocity = get_velocity(points=servo_points, depth_buffer=img[3])
+        velocity = get_velocity(points=servo_points, depth_buffer=depth_pixels, width=width, height=height)
 
         robot_pos, robot_orientation = update_pos_and_orn(
             robot_rot_matrix, velocity, robot_pos, robot_orientation, dt
         )
 
         sleep(0.01)  # arbitrary sleep to let the changes take place
-
+def plot_error_curve(errors: list, filename: str = "error_curve_clean.png"):
+    """
+    绘制误差下降曲线
+    """
+    if not errors:
+        print("没有误差数据可绘制")
+        return
+    
+    try:
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 6))
+        plt.plot(errors)
+        plt.xlabel('Step (only when new min error occurs)')
+        plt.ylabel('MSE Error')
+        plt.title('IBVS Error Convergence (Min Error Only)')
+        plt.grid()
+        plt.savefig(filename)
+        plt.close()
+        print(f"✅ 误差曲线图已保存为 {filename}")
+    except ImportError:
+        print("⚠️ matplotlib 未安装，跳过绘图")
 
 if __name__ == "__main__":
     main()
