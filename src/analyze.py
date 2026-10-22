@@ -52,11 +52,37 @@ def plot_pbvs(d, path):
     ax[0].set_ylabel("平移误差 (mm，对数刻度)")
     ax[0].set_title("PBVS 平移误差收敛")
     ax[0].grid(alpha=0.3, which="both")
-    ax[0].legend(fontsize=8)
-    ax[0].annotate("灰线 = 估计偏差 1–3 mm\n它构成红线（控制误差）的地板",
-                   xy=(0.02, 0.05), xycoords="axes fraction",
-                   fontsize=7.2, color="#5F5E5A",
-                   bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.5))
+    ax[0].legend(fontsize=8, loc="upper right")
+
+    # ---- 稳态窗口 + 峰峰值标注 ----
+    # 对数刻度会把末段的振荡压扁, 肉眼看不出"抖", 所以必须显式标出 p2p。
+    seg = d["e_t_mm"][m]
+    n_seg = len(seg)
+    k = max(int(n_seg * 0.2), 20)
+    if n_seg > k + 5:
+        tail = seg[-k:]
+        tail = tail[np.isfinite(tail)]
+        if len(tail) > 3:
+            p2p = float(tail.max() - tail.min())
+            mu = float(tail.mean())
+            tt = t[m]
+            ax[0].axvspan(tt[-k], tt[-1], color="#f1c40f", alpha=0.15, lw=0)
+            ax[0].annotate(
+                f"稳态窗口 (末 {len(tail)} 步)\n"
+                f"均值 {mu:.1f} mm, 峰峰值 {p2p:.1f} mm",
+                xy=(0.98, 0.30), xycoords="axes fraction", ha="right",
+                fontsize=7.2,
+                bbox=dict(fc="white", ec="#d4ac0d", alpha=0.9, pad=2.0))
+
+    if "gt_t_mm" in d:
+        gv = d["gt_t_mm"][np.isfinite(d["gt_t_mm"])]
+        if len(gv):
+            ax[0].annotate(
+                f"灰线中位 {np.median(gv):.1f} mm\n"
+                "它构成红线（控制误差）的地板",
+                xy=(0.02, 0.05), xycoords="axes fraction", fontsize=7.2,
+                color="#5F5E5A",
+                bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.5))
 
     ax[1].semilogy(t[m], d["e_R_deg"][m], lw=1.4, color="#c0392b", label="控制误差 (由估计位姿计算)")
     if "gt_R_deg" in d:

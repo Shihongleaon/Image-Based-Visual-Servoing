@@ -77,6 +77,10 @@ def main():
                     help="垂直 FOV (伺服相机典型 45~70 度, 越窄标记占比越大)")
     ap.add_argument("--alpha", type=float, default=0.4,
                     help="误差低通系数 (越小越平滑)")
+    ap.add_argument("--lambda-p", type=float, default=1.5,
+                    help="平移增益 lambda_p")
+    ap.add_argument("--lambda-o", type=float, default=1.5,
+                    help="旋转增益 lambda_o")
     ap.add_argument("--out", type=str, default="out_pbvs")
     args = ap.parse_args()
 
@@ -88,8 +92,8 @@ def main():
     K = intrinsic_from_fov(W, H, args.fov)
 
     R_wc, t_wc = initial_pose(args.dist, args.seed)
-    ctrl = PBVSController(args.dist, lambda_p=1.5, lambda_o=1.5,
-                          alpha=args.alpha)
+    ctrl = PBVSController(args.dist, lambda_p=args.lambda_p,
+                          lambda_o=args.lambda_o, alpha=args.alpha)
 
     rows = []
     frames = {}

@@ -34,8 +34,9 @@ def _quartic_coefficients(cos_alpha, cos_beta, cos_gamma, A, B):
       coef: 长度 5, 升幂 [c0, c1, c2, c3, c4], 即 F(v)=sum coef[k] v^k
       D, E: 消元得到的分母/线性多项式 (同为升幂系数), u = D(v)/E(v)
 
-    说明: 用 np.convolve 做多项式乘法, 避免 np.polynomial 的 Python 层开销
-    (实测快 ~30 倍, 这是 30Hz 控制回路可用的关键)。
+    说明: 用 np.convolve 做多项式乘法 (本机实测约 3.9 us/次, 为
+    np.polynomial.polymul 的 1/8)。这一步省的是 Python 层对象开销,
+    量级上不改变算法复杂度。
     """
     # 两条二次式 (以 u 为未知量, 系数是 v 的多项式, 升幂):
     # (I):  A1 u^2 + B1 u + C1 = 0
@@ -77,7 +78,11 @@ def _frame_rotation(src, dst):
 
     用 p1->p2 方向与 p1p2 x p1p3 法向构造右手正交基, 两个坐标系间的
     旋转即 R = B_dst @ B_src^T。三点共线时返回 None。
-    比 SVD (Kabsch) 快约 15 倍, 这是 P3P 内部唯一需要的姿态恢复。
+
+    注意: 不要声称它"比 Kabsch 快 15 倍"。实测三点构型下两者同量级
+    (153 us vs 142 us, 3x3 的 SVD 本来就便宜)。真正的理由是**确定性**:
+    构造式方法给出固定的符号约定, 不会因 SVD 的反射/符号不确定而返回
+    镜像解; 同时不依赖 LAPACK 的 SVD 实现。
     """
     e1s = src[1] - src[0]
     e1d = dst[1] - dst[0]
@@ -295,7 +300,10 @@ def refine_gn(pts_w, uv, K, R0, t0, iters=6, lam0=1e-3):
     与 scipy.optimize.least_squares 等价但去除了 Python 层开销:
       - 旋转用矩阵参数化 + 小角度增量更新, 免去每步 Rodrigues 展开
       - 残差/雅可比按 (N,2,6) 批量装配, 一次 einsum 完成
-    单次精化 ~150us, 可嵌入 30Hz 控制回路。
+
+    耗时: 4 点 6 次迭代本机实测 **~1.8 ms** (随机器状态波动 ±30%)。
+    一次 solve_p3p_robust 最多调用 3 次, 故完整管线 ~5~8 ms。
+    (早期文档写的 "~150 us" 是错的, 差一个数量级, 已更正。)
 
     参数化: 增量 x = [dθ(3), dt(3)], 左乘更新 R <- exp([dθ]x) R。
     返回 (R, t, rmse); 失败时返回 None。
@@ -404,8 +412,9 @@ def refine_lm(pts_w, uv, K, R0, t0, max_nfev=200):
     """
     重投影最小化精化 (快速 LM/Gauss-Newton, 解析雅可比)。
 
-    保持与旧 scipy 版本相同的接口; 内部使用 refine_gn 纯 NumPy 实现,
-    单次 ~50us, 适配 30Hz 控制回路。
+    保持与旧 scipy 版本相同的接口; 内部使用 refine_gn 纯 NumPy 实现。
+    名义上是"LM", 实际是"λ 自适应衰减的 GN": 步长被接受时 λ 下降,
+    λ 很小时退化为高斯-牛顿, 只在失败分支才靠 λ 增大来挽救。
     """
     out = refine_gn(pts_w, uv, K, R0, t0)
     if out is None:
@@ -416,6 +425,19 @@ def refine_lm(pts_w, uv, K, R0, t0, max_nfev=200):
 # ---------------------------------------------------------------------------
 # 对外主接口: P3P + 多候选消歧 + LM
 # ---------------------------------------------------------------------------
+
+def _reproj_rmse(pts_w, uv, R, t, K):
+    """重投影均方根误差 (px)。
+
+    必须与 refine_gn 的返回值同口径 —— pose_utils.reproj_error 返回的是
+    "逐点 L2 范数的均值", 恒 <= RMSE (Jensen)。用它和 refine_gn 的 RMSE
+    比较, 会系统性低估未精化解的误差, 导致 "err2 < err" 判据把真正更好的
+    LM 解丢掉 (实测: 方形标记 0.3px 下平移中位 2.40mm vs 2.28mm)。
+    """
+    Xc = (R @ np.asarray(pts_w, float).T).T + np.asarray(t, float).reshape(3)
+    uv_hat = (K @ (Xc / Xc[:, 2:3]).T).T[:, :2]
+    return float(np.sqrt(np.mean(np.sum((uv_hat - uv) ** 2, axis=1))))
+
 
 def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
                      R_prev=None, t_prev=None):
@@ -454,12 +476,12 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
         if gap < 1e-3:                    # 根间距过小 => 解对并 => 近奇异
             singular = True
 
-    # 只对原始重投影误差最小的 2 个候选做精化 (足够覆盖正确分支,
-    # 且把耗时从 4 次 LM 降到 2 次)
+    # 只对原始重投影误差最小的 3 个候选做精化 (足够覆盖正确分支,
+    # 且把耗时从 4 次 LM 降到 3 次)
     ranked = sorted(
-        ((reproj_error(pts_w, uv, R0, t0, K), R0, t0) for (R0, t0) in cands),
+        ((_reproj_rmse(pts_w, uv, R0, t0, K), R0, t0) for (R0, t0) in cands),
         key=lambda x: x[0])
-    evaluated = []                        # (reproj, R, t, used_lm)
+    evaluated = []                        # (rmse, R, t, used_lm)
     for idx, (err0, R0, t0) in enumerate(ranked):
         R, t, err = R0, t0, err0
         lm_used = False
@@ -467,6 +489,7 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
             out = refine_gn(pts_w, uv, K, R0, t0)
             if out is not None and out[0] is not None:
                 R2, t2, err2 = out
+                # 同口径比较 (两者都是 RMSE), 否则 LM 的收益会被吞掉
                 if err2 < err:
                     R, t, err, lm_used = R2, t2, err2, True
         evaluated.append((err, R, t, lm_used))

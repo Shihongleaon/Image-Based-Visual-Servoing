@@ -14,8 +14,17 @@ P3P 求解器蒙特卡洛基准: 自研闭式解(+LM) vs OpenCV 内置方法。
   ours+LM    自研 P3P + 每候选 LM 精化 (完整管线)
   epnp       cv2.solvePnP (SOLVEPNP_EPNP)
   epnp+LM    epnp 初值 + LM 精化
-  cvp3p      cv2.solvePnP (SOLVEPNP_P3P)
+  cvp3p      cv2.solvePnP (SOLVEPNP_P3P), 只喂前 3 点
   cvp3p+LM   cvp3p 初值 + LM 精化
+  ippe       cv2 平面专用解法 (SOLVEPNP_IPPE), 两解按重投影选优
+  ippe+LM
+  ippesq     平面方形专用 (SOLVEPNP_IPPE_SQUARE), 需固定点序
+  ippesq+LM
+
+为什么必须加 IPPE: 标记是共面方板, 这恰是 IPPE 的设计场景。不加这条基线,
+"平面标记为什么不用平面专用解法"就是一个答不上来的问题。
+IPPE_SQUARE 对点序有硬要求 ([-s,s,0],[s,s,0],[s,-s,0],[-s,-s,0]),
+因此观测点必须同步重排。
 """
 
 import time
@@ -83,13 +92,62 @@ def run_cv2(uv, flag, lm):
     return R, t
 
 
+# IPPE_SQUARE 要求物体点按 [(-s,s), (s,s), (s,-s), (-s,-s)] (z=0) 排列,
+# 而本仓库 PTS_W 的顺序是 [(-s,-s), (s,-s), (s,s), (-s,s)], 故需反序。
+PERM = np.array([3, 2, 1, 0])
+PTS_W_IPPE = PTS_W[PERM]
+
+
+def reproj_rms(P, uv, R, t):
+    """4 点重投影 RMS (px), 仅用于在多解间选优。"""
+    Xc = (R @ P.T).T + t
+    uv_hat = (K @ (Xc / Xc[:, 2:3]).T).T[:, :2]
+    return float(np.sqrt(np.mean(np.sum((uv_hat - uv) ** 2, axis=1))))
+
+
+def run_ippe(uv, flag, lm, n_pts=4):
+    """IPPE 家族: 平面专用, 返回 1~2 个解, 按重投影误差选优。
+
+    用 solvePnPGeneric 而非 solvePnP, 是为了让"多解消歧"这一步与其他方法
+    对齐 —— 自研方法同样是"生成候选 + 4 点重投影选优", 若这里只取 cv2 默认
+    返回的单解, 比较就不公平。
+    """
+    P = PTS_W_IPPE if flag == cv2.SOLVEPNP_IPPE_SQUARE else PTS_W
+    u = uv[PERM] if flag == cv2.SOLVEPNP_IPPE_SQUARE else uv
+    try:
+        res = cv2.solvePnPGeneric(P, u, K, None, flags=flag)
+    except cv2.error:
+        return None
+    if not res or res[0] <= 0 or res[1] is None:
+        return None
+    best = None
+    for rvec, tvec in zip(res[1], res[2]):
+        R = cv2.Rodrigues(rvec)[0]
+        t = tvec.reshape(3)
+        e = reproj_rms(PTS_W, uv, R, t)
+        if best is None or e < best[0]:
+            best = (e, R, t)
+    if best is None:
+        return None
+    _, R, t = best
+    if lm:
+        out = refine_gn(PTS_W, uv, K, R, t)
+        if out is not None and out[0] is not None:
+            R, t = out[0], out[1]
+    return R, t
+
+
 METHODS = {
-    "ours":     lambda uv: run_ours(uv, lm=False),
-    "ours+LM":  lambda uv: run_ours(uv, lm=True),
-    "epnp":     lambda uv: run_cv2(uv, cv2.SOLVEPNP_EPNP, lm=False),
-    "epnp+LM":  lambda uv: run_cv2(uv, cv2.SOLVEPNP_EPNP, lm=True),
-    "cvp3p":    lambda uv: run_cv2(uv, cv2.SOLVEPNP_P3P, lm=False),
-    "cvp3p+LM": lambda uv: run_cv2(uv, cv2.SOLVEPNP_P3P, lm=True),
+    "ours":      lambda uv: run_ours(uv, lm=False),
+    "ours+LM":   lambda uv: run_ours(uv, lm=True),
+    "epnp":      lambda uv: run_cv2(uv, cv2.SOLVEPNP_EPNP, lm=False),
+    "epnp+LM":   lambda uv: run_cv2(uv, cv2.SOLVEPNP_EPNP, lm=True),
+    "cvp3p":     lambda uv: run_cv2(uv, cv2.SOLVEPNP_P3P, lm=False),
+    "cvp3p+LM":  lambda uv: run_cv2(uv, cv2.SOLVEPNP_P3P, lm=True),
+    "ippe":      lambda uv: run_ippe(uv, cv2.SOLVEPNP_IPPE, lm=False),
+    "ippe+LM":   lambda uv: run_ippe(uv, cv2.SOLVEPNP_IPPE, lm=True),
+    "ippesq":    lambda uv: run_ippe(uv, cv2.SOLVEPNP_IPPE_SQUARE, lm=False),
+    "ippesq+LM": lambda uv: run_ippe(uv, cv2.SOLVEPNP_IPPE_SQUARE, lm=True),
 }
 
 
