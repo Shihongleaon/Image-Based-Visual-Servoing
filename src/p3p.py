@@ -446,16 +446,20 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
 
     流程:
       1) 闭式解给出至多 4 组候选位姿
-      2) 每个候选用全部 N 点做 LM 精化 (同时解决噪声精度与平面二义性选支)
+      2) 按 4 点重投影 RMSE 排序, **前 3 个候选**用全部 N 点做 LM 精化
+         (不是全部候选; 3 个已足够覆盖正确分支, 且把耗时从 4 次 LM 降到 3 次)
       3) 消歧: 无先验取重投影最小者; 给定 (R_prev, t_prev) 时用时序
-         连续性选支 (平面目标二义分支的重投影几乎相同)
+         连续性选支 (平面目标二义分支的重投影几乎相同)。注意 R_prev/t_prev
+         只用于**选支**, 不会作为 LM 的初值 —— LM 初值恒为闭式解候选。
 
     参数:
         pts_w: (N,3) N>=3, 前 3 个用于闭式解, 其余用于消歧
         uv:    (N,2)
         K:     (3,3)
-        reproj_thresh: 像素, 超过则判定该解不可靠
-        R_prev, t_prev: 上一帧位姿 (world->camera), 用于时序消歧
+        reproj_thresh: 像素。**当前仅占位, 返回前未用它做拒绝门限** ——
+                  success=True 只表示"产生了可用解", 不表示"通过了该阈值"。
+                  (若要启用, 需同时改基准的失败判据, 见 README 的措辞边界)
+        R_prev, t_prev: 上一帧位姿 (world->camera), 仅用于时序选支
 
     返回:
         dict(success, R, t, reproj_err, n_candidates, used_lm, singular, singular_gap)
