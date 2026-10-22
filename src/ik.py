@@ -96,19 +96,22 @@ def axis_angle_matrix(axis, angle):
 class ArmModel:
     """从 PyBullet 标定出的串联链模型 (纯 NumPy 计算)。
 
-    为什么"标定"而不是直接读 URDF 的 parentFrame
-    --------------------------------------------
-    URDF 的 joint origin 是相对父 link 的 *惯性系 (COM)* 定义的, 而 PyBullet
-    的 getJointInfo 给出的 parentFramePos/Orn 也沿用该约定。若直接按
-    "link 帧 -> joint 帧" 链式相乘, 会与 getLinkState 返回的 link 帧差出
-    一个惯性偏移 (xArm6 实测 ~0.4 m), 全盘错位。
+    为什么"标定"而不是直接读 getJointInfo 的 parentFrame
+    ----------------------------------------------------
+    URDF 标准里 joint origin 是相对 *父 link 坐标系* 定义的; 但 PyBullet 的
+    getJointInfo 返回的 parentFramePos/Orn 用的是仿真器内部的惯性参考系,
+    二者约定不同。若把这些值直接当作 URDF 的 joint origin 链式相乘,
+    会与 getLinkState 返回的 link 帧差出一个惯性偏移 (xArm6 实测 ~0.4 m)。
 
     这里换个做法: 载入后在 q = 0 位形下读一次各 link 的实际位姿, 反解出
     相邻 link 之间的固定变换 A_i = T_parent(0)⁻¹ T_child(0);
     再按
         T_child(q) = T_parent(q) · A_i · Rot(axis_i, q_i)
-    递推。这样 FK 与 PyBullet 完全一致 (已验证到 1e-12), 且
-    A_i 就是 URDF 的常量参数, 与具体位形无关, 可在真机上用同样的方式标定。
+    递推。这样 FK 与仿真器的 link 帧完全一致 (已验证到 1e-12)。A_i 与位形
+    无关, 性质上对应 URDF 的常量关节变换, 但需注意:
+
+    - 这是从仿真模型提取运动学参数, 不等于真机已完成标定;
+    - 真机上要用同样的方式标定, 需自行测量 link 系与传感器系的固定变换。
 
     参数:
         bullet:    pybullet 模块

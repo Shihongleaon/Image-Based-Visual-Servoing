@@ -54,7 +54,7 @@ def _quartic_coefficients(cos_alpha, cos_beta, cos_gamma, A, B):
     # 永不退化。
     A1 = np.array([A - 1.0])
     B1 = np.array([2.0 * cos_alpha, -2.0 * A * cos_gamma])
-    C1 = np.array([-A, 0.0, A])
+    C1 = np.array([-1.0, 0.0, A])
     A2 = np.array([B])
     B2 = np.array([0.0, -2.0 * B * cos_gamma])
     C2 = np.array([-1.0, 2.0 * cos_beta, B - 1.0])

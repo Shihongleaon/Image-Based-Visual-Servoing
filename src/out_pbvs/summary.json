@@ -6,12 +6,12 @@
     "ctrl_hz_nominal": 30.0
   },
   "converged": true,
-  "conv_step": 134,
-  "conv_time_s": 4.466666666666667,
-  "steady_t_mm": 3.3552892028403143,
-  "steady_R_deg": 0.3064622943844466,
-  "p95_t_mm": 6.098807967843954,
-  "ctrl_hz_measured": 9.178849532476606,
-  "p3p_ms_median": 4.77561799925752,
+  "conv_step": 181,
+  "conv_time_s": 6.033333333333333,
+  "steady_t_mm": 3.331789393323769,
+  "steady_R_deg": 0.31668561751584784,
+  "p95_t_mm": 9.496173999399383,
+  "ctrl_hz_measured": 5.477304739410477,
+  "p3p_ms_median": 10.238634495181032,
   "steps": 200
 }
