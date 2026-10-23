@@ -21,7 +21,9 @@
 > **指标口径 (勿混用)**：下表"平移误差"是 **‖t − t_gt‖**, 即 X_c = R X_w + t 的平移参数;
 > 闭环图与 `pose_error` 用的是 **相机中心误差** ‖C − C*‖, C = −Rᵀt。两者一般不相等:
 > 同一批 2000 组数据、σ=0.3 px 下, ‖Δt‖ 中位 2.31 mm, ‖ΔC‖ 中位 10.91 mm
-> (`src/metric_check.py`)。闭环的 1.04 mm / 3.33 mm 都是**相机中心**口径。
+> (`src/metric_check.py`)。闭环的 2.56 mm / 4.04 mm 都是**相机中心**口径。
+> 注意比值**不是常数**: 一阶展开 ‖ΔC‖ ≈ ‖Δt + δθ×t‖, 旋转小时可 <1
+> (单帧实测 5.53 vs 4.38 mm, 0.79×), 只能说"中位 4.18×", 不能说"恒为 4 倍"。
 
 ### P3P 蒙特卡洛基准 (1500 组位姿, 0.2 m 方形标记, 失败阈值 30 mm / 5°)
 
@@ -147,6 +149,22 @@ python main_arm.py --steps 250 --res 480 --video arm_world_demo.mp4 --out out_de
     不能说"整条管线完全不调用 OpenCV"
 - **奇异性度量**: 四次方程最小正实根间距 (danger cylinder 判据), 连续量输出。
   它只是**诊断量**, 不参与"是否精化"的切换（后者只由 `use_lm` 控制）
+
+### 图像点与 3D 点从哪来（`trace_pose.py` 可逐项打印）
+
+| | 来源 | 是否每帧变化 |
+|---|---|---|
+| 3D 点 | `scene.PTS_M`: 由印刷边长 0.30 m 推出的 4 个角点 (标记系 z=0), 经 `R_WM`/`MARKER_CENTER` 变到世界系 | **不变**, 是模型先验, 不从深度图/点云提取 |
+| 图像点 | `render()` PyBullet 光栅化 → `cv2.aruco` (DICT_4X4_1000) 检测 + `CORNER_REFINE_SUBPIX` (win 5, 30 iter) | 每帧变 |
+| 对应关系 | 靠 ArUco 角点序 `[TL, TR, BR, BL]` 与 `PTS_M` 定义顺序一致 | 固定 |
+
+- **只用 4 个点**（单个标记的全部角点）。闭式解用前 3 个, 第 4 个用于候选排序、LM 残差、选支。
+- **对应的唯一性可验证**: 循环偏移 0 时 mean|Δuv| = 0.61 px, 其余三种偏移 68/131/69 px。
+- `detect_corners` 取 `corners[0]`, **不按 ID 过滤** —— 多标记场景会出错, 是已知边界（B3）。
+- 4 点 = 8 个约束、6 个未知量 ⇒ **残差只剩 2 个自由度**, 角点误差几乎被位姿吸收:
+  实测角点偏差 0.61 px、LM 后 reproj 仅 0.29 px, 但位姿误差仍有 5.5 mm。
+  **低重投影 ≠ 低位姿误差。**
+
 - 实现中踩过的坑 (面试可展开):
   - 方形标记使 a/c ≡ 1, 回代方程 (I) 时结式恒为零 → 必须回代 (II)
   - 四次方程常数项写成 `-A`（应为 `-1`）：因为方形标记 A≡1 而**恒等隐身**，
@@ -173,6 +191,7 @@ conda activate ibvs310          # 或按 docs/env.yml 创建
 python test_p3p.py              # P3P 正确性冒烟测试 (零噪声 5.5e-11 px)
 python test_p3p_regression.py   # 回归: 矩形/不等边四点/点序/缩放/近共线/退化
 python metric_check.py          # 指标口径: ||dt|| vs 相机中心误差, 采样语义
+python trace_pose.py --dist 0.6 --seed 1   # 单帧全链路追踪: 点从哪来/用几个/怎么选
 python stability.py             # 稳定性量化: p2p / 抖动 / 反转率 / 调节时间
 python benchmark_p3p.py         # 蒙特卡洛基准 (含 IPPE 基线) -> benchmark_out.txt
 python main_pbvs.py --dist 0.6 --fov 55 --seed 1 --steps 200   # 自由相机 PBVS

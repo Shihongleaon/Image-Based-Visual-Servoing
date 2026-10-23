@@ -10,11 +10,12 @@ P3P 求解器蒙特卡洛基准: 自研闭式解(+LM) vs OpenCV 内置方法。
   - 统计: 位姿误差 (平移 mm / 旋转 deg)、失败率 (阈值判定)、单次耗时
 
 方法:
-  ours       自研 P3P 闭式解 + 多候选 4 点重投影消歧
-  ours+LM    自研 P3P + 每候选 LM 精化 (完整管线)
+  ours       自研 P3P 闭式解 + 多候选 4 点重投影消歧 (前 3 点闭式, 4 点选支/精化)
+  ours+LM    自研 P3P + 前 3 个候选各做一次 LM (完整管线)
   epnp       cv2.solvePnP (SOLVEPNP_EPNP)
   epnp+LM    epnp 初值 + LM 精化
-  cvp3p      cv2.solvePnP (SOLVEPNP_P3P), 只喂前 3 点
+  cvp3p      cv2.solvePnP (SOLVEPNP_P3P)。注意: 传入 4 点, OpenCV 内部用第 3 点
+             闭式求解、第 4 点消歧 —— 不是"只喂前 3 点", 否则应与 ours 差一档
   cvp3p+LM   cvp3p 初值 + LM 精化
   ippe       cv2 平面专用解法 (SOLVEPNP_IPPE), 两解按重投影选优
   ippe+LM
