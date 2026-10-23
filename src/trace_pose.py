@@ -10,9 +10,18 @@ trace_pose.py
 """
 
 import argparse
+import os
+import sys
 
 import cv2
 import numpy as np
+
+# scene.build_scene() 用相对路径读 "static/aruco_marker_face.png",
+# 因此在任何目录下调用本脚本都先切到 src/, 并把它加入 import 路径。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+os.chdir(_HERE)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 import scene as S
 from pose_utils import (intrinsic_from_fov, inv_rodrigues, project_points)
