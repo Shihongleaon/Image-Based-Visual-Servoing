@@ -274,8 +274,10 @@ def main():
         e_R_gt = float(np.degrees(np.linalg.norm(th_gt)))
         # 估计误差 (P3P 认为的误差) —— 与真值之差即"感知误差"
         e_t_est = float(np.linalg.norm(pose_error(R_mc, t_mc, *desired_pose(args.dist))[0]) * 1e3)
-        # 上一帧相机位姿作为下一次 P3P 的 warm start
-        R_prev, t_prev = R_wc.copy(), t_wc.copy()
+        # 下一帧 P3P 的"选支先验": 必须用**估计值**, 不能用真值 R_wc/t_wc
+        # (否则等于把真值喂进候选消歧, 属于 oracle 泄漏; 与 main_pbvs 保持一致)。
+        # 注意它只参与候选间选支, 不作为 LM 初值。
+        R_prev, t_prev = out["R"].copy(), out["t"].copy()
 
         loop_ms = (time.perf_counter() - t_start) * 1e3
         emit(world_img, rgb, i, e_t_gt, e_R_gt)
