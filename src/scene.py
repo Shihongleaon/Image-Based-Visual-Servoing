@@ -16,11 +16,18 @@ P3P/PBVS 的位姿误差可以直接用 mm / deg 表述, 也便于和真实机�
 - 相机系 (OpenCV): x 右, y 下, z 前。R_wc: world -> camera。
 """
 
+import os
+
 import numpy as np
 import pybullet as p
 import pybullet_data
 
 from image import get_image_config
+
+# 贴图资源用绝对路径: pybullet 的 loadTexture 相对 cwd 解析, 而
+# init_pybullet 把 search path 改成了 pybullet_data, 从仓库根目录
+# (`python src/main_arm.py`) 启动时 "static/..." 会解析失败。
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 # ---- 标记几何 -------------------------------------------------------------
 PRINTED_SIZE = 0.30                  # 印刷黑色方块边长, m
@@ -63,12 +70,14 @@ def init_pybullet(gui=False):
     return cid
 
 
-def build_scene(texture_path="static/aruco_marker_face.png", distractors=True):
+def build_scene(texture_path=None, distractors=True):
     """
     构建场景: 地面 + 竖立标记立方体 (0.3 m, 正面贴 ARUCO) + 干扰物。
 
     返回 dict(plane, board, obstacles)
     """
+    if texture_path is None:
+        texture_path = os.path.join(_STATIC_DIR, "aruco_marker_face.png")
     plane = p.loadURDF("plane.urdf")
     # 地面调暗: 降低 ArUco 自适应阈值受亮背景干扰的风险
     p.changeVisualShape(plane, -1, rgbaColor=[0.35, 0.35, 0.38, 1.0])
