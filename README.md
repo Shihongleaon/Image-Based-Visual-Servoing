@@ -225,6 +225,19 @@ python main_arm.py --seed 3 --steps 250                        # 六轴臂闭环
 python analyze.py               # 生成 fig_pbvs.png / fig_arm.png
 ```
 
+### 可复现性诊断脚本（回答"为什么敢这么写"）
+
+```bash
+python verify_elimination.py    # 消元正确性证明: 恒等式残差 / 无漏根 / 无伪根 / 8=4x2
+python explain_lm.py --only e1  # LM 增益来自第 4 点, 而非"用了 LM"
+python explain_disambiguation.py # 消歧链路的真实判据 + 倾角扫描
+python trace_disambiguation_live.py --steps 60   # 挂到 main_arm 主循环逐帧记录候选池
+```
+
+`verify_elimination.py` 是纯数值验算, 不需要 pybullet; 后两个诊断脚本与主循环同参,
+需要完整仿真环境。贴图资源已改为相对 `scene.py` 的绝对路径, 因此从仓库根目录
+直接 `python src/main_arm.py` 也能启动, 不必先 `cd src`。
+
 ## 目录
 
 ```
