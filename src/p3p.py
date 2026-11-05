@@ -293,7 +293,7 @@ def _exp_small(w):
             + ((1.0 - np.cos(th)) / th2) * (Kx @ Kx))
 
 
-def refine_gn(pts_w, uv, K, R0, t0, iters=6, lam0=1e-3):
+def refine_gn(pts_w, uv, K, R0, t0, iters=4, lam0=1e-3):
     """
     快速 Levenberg-Marquardt 重投影最小化 (纯 NumPy 解析雅可比)。
 
@@ -301,8 +301,32 @@ def refine_gn(pts_w, uv, K, R0, t0, iters=6, lam0=1e-3):
       - 旋转用矩阵参数化 + 小角度增量更新, 免去每步 Rodrigues 展开
       - 残差/雅可比按 (N,2,6) 批量装配, 一次 einsum 完成
 
-    耗时: 4 点 6 次迭代本机实测 **~1.8 ms** (随机器状态波动 ±30%)。
-    一次 solve_p3p_robust 最多调用 3 次, 故完整管线 ~5~8 ms。
+    迭代数为什么是 4 (不是 6, 也不是 3)
+    ------------------------------------
+    `tune_lm_iters.py --real` 在真实伺服工况 (0.3 m 标记 / fov55 / 0.35~0.62 m)
+    1500 组、sigma=0.3 px 上扫描 (配对比较, 同一批样本跑遍所有 iters):
+
+      iters   失败率    Δt 中位    Δt p95    管线耗时
+        3     0.13%    0.372 mm   1.07 mm   3.25 ms
+        4     0.00%    0.366 mm   0.92 mm   3.72 ms
+        5     0.00%    0.366 mm   0.92 mm   4.05 ms
+        6     0.00%    0.366 mm   0.92 mm   4.40 ms
+
+    4/5/6 次结果逐位相同, 3 次还差一档 (残留 2 例失败)。机制上能对上:
+    从错误分支跨盆地时逐迭代误差为 34.7 -> 15.0 -> 2.3 -> 0.4 mm
+    (见 explain_lm.py 的 iters 轨迹), **恰好 4 步走完**, 所以 3 次停在
+    2.3 mm 量级。故 4 是拐点, 5/6 是纯浪费 (4->6 多花 0.68 ms, 15.5%)。
+
+    独立验证: explain_lm.py 的 E4 用另一套采样 (0.3 m 标记, 200 帧) 得到
+    Δt 中位 3 次 0.430 / 4 次 0.399 / 6~12 次 0.398 mm —— 同样在 4 次跳变,
+    与上面的失败率/p95 拐点一致。
+
+    注: 基准工况 (0.2 m 标记 / 0.4~1.2 m) 下 3 次就已收敛, 看不出差别 ——
+    只看单一工况会得出错误结论, 这也是必须按真实工况定标的原因。
+
+    耗时: 4 点 4 次迭代本机实测 **~0.8 ms** (6 次为 ~1.1 ms, 随机器状态
+    波动 ±30%); 一次 solve_p3p_robust 最多调用 3 次, 完整管线 ~3.9 ms
+    (含闭式解与排序; 不开 LM 时 ~1.5 ms)。
     (早期文档写的 "~150 us" 是错的, 差一个数量级, 已更正。)
 
     参数化: 增量 x = [dθ(3), dt(3)], 左乘更新 R <- exp([dθ]x) R。
@@ -440,7 +464,7 @@ def _reproj_rmse(pts_w, uv, R, t, K):
 
 
 def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
-                     R_prev=None, t_prev=None):
+                     R_prev=None, t_prev=None, lm_iters=None):
     """
     工程可用的 P3P 求解入口。
 
@@ -460,6 +484,8 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
                   success=True 只表示"产生了可用解", 不表示"通过了该阈值"。
                   (若要启用, 需同时改基准的失败判据, 见 README 的措辞边界)
         R_prev, t_prev: 上一帧位姿 (world->camera), 仅用于时序选支
+        lm_iters: LM 迭代次数, None 表示用 refine_gn 的默认值 (4)。
+                  显式给出可用于 A/B 对照 (如 main_arm.py --lm-iters 6)。
 
     返回:
         dict(success, R, t, reproj_err, n_candidates, used_lm, singular, singular_gap)
@@ -467,6 +493,7 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
     pts_w = np.asarray(pts_w, dtype=np.float64)
     uv = np.asarray(uv, dtype=np.float64)
     pts3, uv3 = pts_w[:3], uv[:3]
+    _lm_kw = {} if lm_iters is None else {"iters": int(lm_iters)}
 
     cands = solve_p3p(pts3, uv3, K)
     singular = False
@@ -490,7 +517,7 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
         R, t, err = R0, t0, err0
         lm_used = False
         if use_lm and idx < 3:
-            out = refine_gn(pts_w, uv, K, R0, t0)
+            out = refine_gn(pts_w, uv, K, R0, t0, **_lm_kw)
             if out is not None and out[0] is not None:
                 R2, t2, err2 = out
                 # 同口径比较 (两者都是 RMSE), 否则 LM 的收益会被吞掉
@@ -511,7 +538,7 @@ def solve_p3p_robust(pts_w, uv, K, use_lm=True, reproj_thresh=2.0,
         except Exception:
             init = None
         if init is not None:
-            out = refine_gn(pts_w, uv, K, init[0], init[1])
+            out = refine_gn(pts_w, uv, K, init[0], init[1], **_lm_kw)
             if out is not None and out[0] is not None:
                 R, t, err = out
                 evaluated.append((err, R, t, True))

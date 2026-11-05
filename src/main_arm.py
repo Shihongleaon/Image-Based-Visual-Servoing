@@ -169,6 +169,9 @@ def main():
     ap.add_argument("--video", type=str, default="",
                     help="第三视角分屏演示视频输出路径 (mp4), 空则不录")
     ap.add_argument("--out", type=str, default="out_arm")
+    ap.add_argument("--lm-iters", type=int, default=None,
+                    help="LM 迭代次数; 默认取 refine_gn 的默认值 (4)。"
+                         "给 6 可复现旧结果, 用于 A/B 对照")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -236,7 +239,8 @@ def main():
         # 3) P3P -> marker->camera
         t_p3p0 = time.perf_counter()
         out = solve_p3p_robust(S.to_world(S.PTS_M), uv, K, use_lm=True,
-                               R_prev=R_prev, t_prev=t_prev)
+                               R_prev=R_prev, t_prev=t_prev,
+                               lm_iters=args.lm_iters)
         p3p_ms = (time.perf_counter() - t_p3p0) * 1e3
         if not out["success"]:
             rows.append(dict(step=i, detect=1, e_t_mm=np.nan, e_R_deg=np.nan))

@@ -255,7 +255,11 @@ def e4_iters(n=200, sigma=0.3, seed=4):
         m = float(np.median(errs))
         base = m if base is None else base
         print(f"  {k:6d}{m:13.3f}{100*(1-m/base):12.1f}%{ms:13.2f}")
-    print("  => 增益在前 2–3 次迭代基本吃满，6 次是保守取值（成本换余量）。\n")
+    print("  => Δt **中位数**在 2–3 次内基本吃满，但尾部不同：")
+    print("     失败率与 p95 的拐点在 4 次（见 tune_lm_iters.py --real 配对实验：")
+    print("     3 次 0.13% 失败 / p95 1.07 mm，4 次 0.00% / 0.92 mm，5–6 次不再变）。")
+    print("     本函数只看中位，且对**所有**候选都精化（真实管线只精化前 3 个），")
+    print("     因此会低估尾部对迭代数的需求 —— 定标以 tune_lm_iters 为准。\n")
 
 
 def e5_basin(n=150, sigma=0.3, seed=5):
@@ -309,7 +313,7 @@ def e6_timing():
         s = time.perf_counter()
         refine_gn(pts, uv, K, R0, t0)
         ts.append((time.perf_counter() - s) * 1000)
-    print(f"  单次 refine_gn (4 点, 6 迭代) : 中位 {np.median(ts):.2f} ms"\
+    print(f"  单次 refine_gn (4 点, 默认迭代数) : 中位 {np.median(ts):.2f} ms"\
           f"  (p95 {np.percentile(ts,95):.2f})")
     for ul in (False, True):
         tn = []
@@ -319,8 +323,21 @@ def e6_timing():
             tn.append((time.perf_counter() - s) * 1000)
         print(f"  solve_p3p_robust(use_lm={str(ul):<5}) : "
               f"中位 {np.median(tn):.2f} ms")
-    print("  真实轨迹 src/out_arm/log.csv 的 p3p_ms: "
-          "中位 9.63 ms / p95 17.77 ms（250 帧，含 3 次 LM）\n")
+    # 真实轨迹耗时直接从日志读, 不硬编码 —— 否则重跑闭环后这里的数字会悄悄过期
+    import csv
+    import os
+    _lp = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "out_arm", "log.csv")
+    if os.path.exists(_lp):
+        with open(_lp) as f:
+            v = [float(r["p3p_ms"]) for r in csv.DictReader(f)
+                 if r.get("p3p_ms") not in (None, "", "nan")]
+        if v:
+            print(f"  真实轨迹 src/out_arm/log.csv 的 p3p_ms: "
+                  f"中位 {np.median(v):.1f} ms / p95 {np.percentile(v, 95):.1f} ms "
+                  f"({len(v)} 帧)\n")
+    else:
+        print("  真实轨迹日志缺失, 跳过 out_arm 耗时对比\n")
 
 
 if __name__ == "__main__":
