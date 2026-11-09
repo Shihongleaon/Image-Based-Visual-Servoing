@@ -155,6 +155,10 @@ python main_arm.py --steps 250 --res 480 --video arm_world_demo.mp4 --out out_de
 
 成片: `src/arm_world_demo.mp4` (960×300, 30 fps, 8.3 s)
 
+> 2026-11-09 已用当前默认参数（LM 4 次）重录：逐帧 `step / e_t / e_R` 与 `out_arm/log.csv`
+> 同源（第 116 步 4.89 mm / 0.73°，第 249 步 0.65 mm / 0.38°）。录视频会额外渲染一路
+> 第三视角，因此该次运行的耗时不可与基准表横向比较；几何与收敛指标逐位一致。
+
 ## 自研 P3P 求解器 (`src/p3p.py`)
 
 - **闭式核**: Grunert 式消元 —— 三角约束 (余弦定理) + 结式消元 → 一元四次方程,
